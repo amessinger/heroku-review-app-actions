@@ -80,7 +80,7 @@ runs:
         -d '
         {
           "app": {
-            "name": "'"$APP_NAME"'",
+            "name": "bolo-review-pr-1150",
             "region": "${{ inputs.region }}",
             "stack": "${{ inputs.stack }}"
           },
@@ -96,7 +96,7 @@ runs:
       run: |
         curl -X POST https://api.heroku.com/pipeline-couplings \
           -d '{
-          "app": "'"$APP_NAME"'",
+          "app": "bolo-review-pr-1150",
           "pipeline": "'"${{ inputs.pipeline-id }}"'",
           "stage": "review"
         }' \
