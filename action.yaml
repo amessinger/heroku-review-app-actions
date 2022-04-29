@@ -75,6 +75,7 @@ runs:
       if: ${{ github.event_name == 'pull_request' && github.event.action != 'closed' }}
       shell: bash
       run: |
+        export SOURCE_GET_URL=$(echo ${{ toJSON(steps.source_endpoint.outputs.SOURCE_ENDPOINT) }} | jq -r '.get')
         curl -X POST https://api.heroku.com/app-setups \
         -d '
         {
