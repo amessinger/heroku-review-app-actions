@@ -30,6 +30,32 @@ branding:
 runs:
   using: "composite"
   steps:
+    - name: Create Source Endpoint
+      if: ${{ github.event_name == 'pull_request' && github.event.action != 'closed' }}
+      id: source_endpoint
+      shell: bash
+      run: |
+        echo ::set-output name=SOURCE_ENDPOINT::$(curl -X POST https://api.heroku.com/sources \
+        -H "Content-Type: application/json" \
+        -H "Accept: application/vnd.heroku+json; version=3" \
+        -H "Authorization: Bearer ${{ inputs.api-key }}" | \
+        jq -r '{get: .source_blob.get_url, put: .source_blob.put_url}')
+
+    - name: Compress Source Code
+      if: ${{ github.event_name == 'pull_request' && github.event.action != 'closed' }}
+      shell: bash
+      run: |
+        tar -czvf source.tar.gz *
+
+    - name: Upload Source Code
+      if: ${{ github.event_name == 'pull_request' && github.event.action != 'closed' }}
+      shell: bash
+      env:
+        SOURCE_ENDPOINT_GET: ${{ steps.source_endpoint_env.outputs.SOURCE_ENDPOINT_GET }}
+      run: |
+        export URL=$(echo ${{ toJSON(steps.source_endpoint.outputs.SOURCE_ENDPOINT) }} | jq -r '.put')
+        curl $URL -X PUT -H 'Content-Type:' --data-binary @source.tar.gz
+
     - name: Generate app name
       shell: bash
       env:
@@ -44,19 +70,25 @@ runs:
         echo "using app prefix"
         echo "APP_NAME=${{ inputs.app-name-prefix }}-pr-${{ github.event.number }}" >> $GITHUB_ENV
         fi
+
     - name: Create App
       if: ${{ github.event_name == 'pull_request' && github.event.action != 'closed' }}
       shell: bash
       run: |
         curl -X POST https://api.heroku.com/app-setups \
-        -d '{
-        "name": "'"$APP_NAME"'",
-        "region": "${{ inputs.region }}",
-        "stack": "${{ inputs.stack }}"
+        -d '
+        {
+          "app": {
+            "name": "'"$APP_NAME"'",
+            "region": "${{ inputs.region }}",
+            "stack": "${{ inputs.stack }}"
+          },
+          "source_blob": {"url":"'"$SOURCE_GET_URL"'", "version": "'"${{ github.event.pull_request.head.sha }}"'"}
         }' \
         -H "Content-Type: application/json" \
         -H "Accept: application/vnd.heroku+json; version=3" \
         -H "Authorization: Bearer ${{ inputs.api-key }}"
+
     - name: Update Pipeline
       if: ${{ github.event_name == 'pull_request' && github.event.action != 'closed' }}
       shell: bash
@@ -70,29 +102,7 @@ runs:
         -H "Content-Type: application/json" \
         -H "Accept: application/vnd.heroku+json; version=3" \
         -H "Authorization: Bearer ${{ inputs.api-key }}"
-    - name: Create Source Endpoint
-      if: ${{ github.event_name == 'pull_request' && github.event.action != 'closed' }}
-      id: source_endpoint
-      shell: bash
-      run: |
-        echo ::set-output name=SOURCE_ENDPOINT::$(curl -X POST https://api.heroku.com/sources \
-        -H "Content-Type: application/json" \
-        -H "Accept: application/vnd.heroku+json; version=3" \
-        -H "Authorization: Bearer ${{ inputs.api-key }}" | \
-        jq -r '{get: .source_blob.get_url, put: .source_blob.put_url}')
-    - name: Compress Source Code
-      if: ${{ github.event_name == 'pull_request' && github.event.action != 'closed' }}
-      shell: bash
-      run: |
-        tar -czvf source.tar.gz *
-    - name: Upload Source Code
-      if: ${{ github.event_name == 'pull_request' && github.event.action != 'closed' }}
-      shell: bash
-      env:
-        SOURCE_ENDPOINT_GET: ${{ steps.source_endpoint_env.outputs.SOURCE_ENDPOINT_GET }}
-      run: |
-        export URL=$(echo ${{ toJSON(steps.source_endpoint.outputs.SOURCE_ENDPOINT) }} | jq -r '.put')
-        curl $URL -X PUT -H 'Content-Type:' --data-binary @source.tar.gz
+
     - name: Create Build
       if: ${{ github.event_name == 'pull_request' && github.event.action != 'closed' }}
       shell: bash
@@ -105,10 +115,12 @@ runs:
         -H "Authorization: Bearer ${{ inputs.api-key }}" | \
         jq -r '.output_stream_url')
         curl $OUTPUT_STREAM_URL
+
     - name: Set Output:url
       id: output-url
       shell: bash
       run: echo "::set-output name=url::$(echo https://$APP_NAME.herokuapp.com)"
+
     - name: Delete Review App
       if: ${{ github.event_name == 'pull_request' && github.event.action == 'closed' }}
       shell: bash
